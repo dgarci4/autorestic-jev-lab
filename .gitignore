@@ -1,0 +1,12 @@
+# generated or machine-specific: recreate with ./setup.sh
+node_modules/
+bin/
+data/
+repos/
+logs/
+.autorestic.lock.yml
+.playwright-cli/
+
+# secrets
+.env
+.autorestic.env

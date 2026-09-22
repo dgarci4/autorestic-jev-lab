@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Backup Triage Demo</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27%3E%3Ccircle cx=%278%27 cy=%278%27 r=%277%27 fill=%27%232a78d6%27/%3E%3C/svg%3E">
+<style>
+  :root {
+    color-scheme: light;
+    --surface: #fcfcfb; --surface-2: #f3f2ef; --border: #e2e1dc; --track: #f0efec;
+    --text: #0b0b0b; --text-2: #52514e; --text-3: #8a8983;
+    --accent: #2a78d6; --accent-soft: #86b6ef; --accent-ink: #1c5cab;
+    --good: #0ca30c; --warning: #fab219; --serious: #ec835a; --critical: #d03b3b;
+    --mono: ui-monospace, "JetBrains Mono", Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --surface: #1a1a19; --surface-2: #232321; --border: #33332f; --track: #383835;
+      --text: #ffffff; --text-2: #c3c2b7; --text-3: #8f8e86;
+      --accent: #3987e5; --accent-soft: #184f95; --accent-ink: #9ec5f4;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface: #1a1a19; --surface-2: #232321; --border: #33332f; --track: #383835;
+    --text: #ffffff; --text-2: #c3c2b7; --text-3: #8f8e86;
+    --accent: #3987e5; --accent-soft: #184f95; --accent-ink: #9ec5f4;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--surface); color: var(--text); font-family: var(--sans); font-size: 14px; line-height: 1.45; }
+  main { max-width: 1180px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 22px; margin: 0; font-weight: 650; letter-spacing: -0.01em; }
+  h2 { font-size: 15px; margin: 0 0 10px; font-weight: 650; color: var(--text); }
+  p { margin: 0; color: var(--text-2); }
+  section { margin-top: 28px; }
+  .muted { color: var(--text-3); }
+  .mono { font-family: var(--mono); font-size: 12.5px; }
+  header { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: flex-end; justify-content: space-between; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid var(--border); border-radius: 999px; font-size: 12.5px; color: var(--text-2); background: var(--surface-2); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-3); }
+  .dot.good { background: var(--good); } .dot.critical { background: var(--critical); } .dot.warning { background: var(--warning); }
+  button { font: inherit; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  select { font: inherit; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); }
+
+  /* pipeline */
+  .flow { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .step { position: relative; padding: 12px 12px 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); min-height: 92px; }
+  .step .k { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-3); }
+  .step .t { font-weight: 650; margin: 2px 0 4px; }
+  .step .d { color: var(--text-2); font-size: 12.5px; }
+  .step::after { content: "→"; position: absolute; right: -12px; top: 50%; transform: translateY(-50%); color: var(--text-3); font-size: 16px; }
+  .step:last-child::after { content: none; }
+  .flow.fail .step { border-color: var(--accent-soft); }
+  .flow-title { display: flex; align-items: center; gap: 8px; margin: 14px 0 8px; color: var(--text-2); font-size: 12.5px; }
+  .flow-title .dot { width: 10px; height: 10px; }
+  .qs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 8px; }
+  .q { padding: 8px 10px; border: 1px dashed var(--border); border-radius: 8px; font-size: 12.5px; color: var(--text-2); }
+  .q b { color: var(--text); font-family: var(--mono); font-weight: 600; }
+
+  /* kpis */
+  .kpis { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; }
+  .kpi { padding: 12px; border: 1px solid var(--border); border-radius: 10px; }
+  .kpi .l { font-size: 12px; color: var(--text-2); }
+  .kpi .v { font-size: 24px; font-weight: 650; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .kpi .s { font-size: 12px; color: var(--text-3); }
+
+  /* scenarios */
+  .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; }
+  .card { display: flex; flex-direction: column; gap: 6px; padding: 12px; border: 1px solid var(--border); border-radius: 10px; }
+  .card .t { font-weight: 650; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .card .d { color: var(--text-2); font-size: 12.5px; flex: 1; }
+  .card .m { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: space-between; margin-top: 4px; }
+  .tag { font-family: var(--mono); font-size: 11.5px; padding: 2px 6px; border-radius: 6px; background: var(--track); color: var(--text-2); }
+  .badge { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; }
+  .badge.ok { color: var(--good); } .badge.miss { color: var(--critical); } .badge.pending { color: var(--text-3); font-weight: 500; }
+
+  /* console */
+  .console { position: relative; border: 1px solid var(--border); border-radius: 10px; background: #111110; color: #e6e5df; padding: 12px 14px; height: 260px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
+  .console .line.alert { color: #f5b8b8; } .console .line.ok { color: #b9e6b9; } .console .line.head { color: #9ec5f4; }
+  .console-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+
+  /* results */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--border); vertical-align: middle; line-height: 1.3; }
+  th { font-size: 11.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-3); font-weight: 600; }
+  td.num { font-variant-numeric: tabular-nums; text-align: right; }
+  th.num { text-align: right; }
+  tr.row { cursor: pointer; } tr.row:hover td { background: var(--surface-2); } tr.row.sel td { background: var(--surface-2); }
+  .two { display: grid; grid-template-columns: 1.5fr 1fr; gap: 16px; align-items: start; }
+  .panel { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+  .panel h3 { margin: 0 0 8px; font-size: 13px; font-weight: 650; }
+  .bars { display: grid; grid-template-columns: 150px 1fr 44px; gap: 4px 8px; align-items: center; }
+  .bars .lab { font-family: var(--mono); font-size: 12px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bars .lab.sel { color: var(--text); font-weight: 600; }
+  .bars .track { height: 14px; background: var(--track); border-radius: 0 4px 4px 0; overflow: hidden; }
+  .bars .fill { height: 100%; background: var(--accent-soft); border-radius: 0 4px 4px 0; }
+  .bars .fill.sel { background: var(--accent); }
+  .bars .val { font-variant-numeric: tabular-nums; font-size: 12px; text-align: right; color: var(--text-2); }
+  .meter { display: flex; align-items: center; gap: 8px; margin: 4px 0; font-size: 12.5px; }
+  .meter .track { flex: 1; height: 10px; background: var(--track); border-radius: 0 4px 4px 0; overflow: hidden; }
+  .meter .fill { height: 100%; background: var(--accent); border-radius: 0 4px 4px 0; }
+  .meter .lab { width: 110px; color: var(--text-2); } .meter .val { width: 40px; text-align: right; font-variant-numeric: tabular-nums; }
+  .kv { display: grid; grid-template-columns: 110px 1fr; gap: 4px 10px; font-size: 12.5px; margin-top: 8px; }
+  .kv .k { color: var(--text-3); } .kv .v { font-family: var(--mono); }
+  .lists { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .list { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; max-height: 220px; overflow: auto; font-family: var(--mono); font-size: 12px; white-space: pre-wrap; word-break: break-word; color: var(--text-2); }
+  .empty { color: var(--text-3); font-style: italic; }
+  dialog { border: 1px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--text); width: min(960px, 94vw); max-height: 86vh; padding: 0; }
+  dialog::backdrop { background: rgba(0,0,0,.45); }
+  .dlg-head { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+  .dlg-body { padding: 12px 14px; overflow: auto; max-height: 72vh; font-family: var(--mono); font-size: 12px; white-space: pre-wrap; word-break: break-word; color: var(--text-2); }
+  @media (max-width: 900px) {
+    .flow, .qs { grid-template-columns: repeat(2, 1fr); }
+    .step::after { content: none; }
+    .kpis { grid-template-columns: repeat(3, 1fr); }
+    .two, .lists { grid-template-columns: 1fr; }
+    .bars { grid-template-columns: 110px 1fr 40px; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1>Backup failure triage with Jev</h1>
+      <p>autorestic + restic lab. When a backup fails, its output goes to Jev and a typed decision comes back.</p>
+    </div>
+    <div class="chips" id="chips"></div>
+  </header>
+
+  <section>
+    <h2>How it works</h2>
+    <div class="flow-title"><span class="dot good"></span>Happy path</div>
+    <div class="flow">
+      <div class="step"><div class="k">1 · wrapper</div><div class="t">backup.sh &lt;location&gt;</div><div class="d">Runs autorestic under a timeout, captures the full output to logs/, owns the exit code.</div></div>
+      <div class="step"><div class="k">2 · orchestrator</div><div class="t">autorestic</div><div class="d">Reads .autorestic.yml, maps the location to its backends, runs hooks.</div></div>
+      <div class="step"><div class="k">3 · engine</div><div class="t">restic backup</div><div class="d">Deduplicated, encrypted snapshot. Retries a dead backend on its own for up to 15 min.</div></div>
+      <div class="step"><div class="k">4 · storage</div><div class="t">local · rest-server · rest-server (5 MB)</div><div class="d">Three repositories, one per location.</div></div>
+    </div>
+    <div class="flow-title"><span class="dot critical"></span>Failure path (exit code ≠ 0)</div>
+    <div class="flow fail">
+      <div class="step"><div class="k">5 · state</div><div class="t">log tail → JSON</div><div class="d">Last 80 lines of restic output, location, exit code, timed_out flag.</div></div>
+      <div class="step"><div class="k">6 · decision model</div><div class="t">Jev, 4 questions in one call</div><div class="d">Typed answers with probabilities. No prose, ~0.5 s, ~700 tokens.</div></div>
+      <div class="step"><div class="k">7 · policy</div><div class="t">deterministic mapping</div><div class="d">locked → unlock &amp; retry · backend down → retry later · else alert by urgency.</div></div>
+      <div class="step"><div class="k">8 · action</div><div class="t">retry · unlock · alert</div><div class="d">Outcome and full decision appended to results.jsonl and alerts.log.</div></div>
+    </div>
+    <div class="qs">
+      <div class="q"><b>cause</b> · choice among 8 root causes, each described in plain language</div>
+      <div class="q"><b>transient</b> · boolean, will it resolve itself within minutes?</div>
+      <div class="q"><b>needs_human</b> · boolean, is a person required?</div>
+      <div class="q"><b>urgency</b> · score over 4 levels: low → medium → high → critical</div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Last run at a glance</h2>
+    <div class="kpis" id="kpis"></div>
+  </section>
+
+  <section>
+    <h2>Scenarios</h2>
+    <div class="toolbar">
+      <button class="primary" id="run-all">Run all 7 scenarios</button>
+      <span class="muted">or a normal backup:</span>
+      <select id="loc"></select>
+      <button id="run-backup">Run backup</button>
+      <span style="flex:1"></span>
+      <button id="clear">Clear results</button>
+    </div>
+    <div class="cards" id="cards"></div>
+  </section>
+
+  <section>
+    <div class="console-head"><h2 style="margin:0">Live output</h2><span class="chip" id="run-state"><span class="dot"></span>idle</span></div>
+    <div class="console mono" id="console"><span class="empty">Nothing running. Pick a scenario above.</span></div>
+  </section>
+
+  <section>
+    <h2>Results</h2>
+    <div class="two">
+      <div class="panel" style="padding:0; overflow:auto">
+        <table id="results">
+          <thead><tr><th>Scenario</th><th>Jev cause</th><th class="num">p</th><th class="num">Urg.</th><th>Action</th><th>Outcome</th><th class="num">ms</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="panel" id="detail"><span class="empty">Select a row to see Jev's full answer.</span></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Side channels</h2>
+    <div class="lists">
+      <div><h3 class="muted" style="margin:0 0 6px;font-size:12.5px;font-weight:600">alerts.log · what would go to on-call</h3><div class="list" id="alerts"></div></div>
+      <div><h3 class="muted" style="margin:0 0 6px;font-size:12.5px;font-weight:600">hooks.log · everything autorestic hooks actually receive</h3><div class="list" id="hooks"></div></div>
+    </div>
+  </section>
+</main>
+
+<dialog id="dlg"><div class="dlg-head"><b id="dlg-title" class="mono"></b><button id="dlg-close">Close</button></div><div class="dlg-body" id="dlg-body"></div></dialog>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const CAUSES = ['locked', 'backend_unreachable', 'auth', 'disk_full', 'permissions', 'repo_corrupt', 'config_error', 'unknown'];
+const URG = ['low', 'medium', 'high', 'critical'];
+let scenarios = [], results = [], selected = null, busy = false;
+
+async function api(p, opt) { const r = await fetch(p, opt); return r.json(); }
+
+function statusChip(label, ok, text) {
+  return `<span class="chip"><span class="dot ${ok === null ? '' : ok ? 'good' : 'critical'}"></span>${esc(label)}${text ? ' · ' + esc(text) : ''}</span>`;
+}
+async function loadStatus() {
+  const s = await api('/api/status');
+  const c = s.containers || {};
+  const bal = s.credits?.balance != null ? `$${s.credits.balance} credits` : (s.credits?.error || 'unknown');
+  $('#chips').innerHTML =
+    statusChip('rest-server', c['lab-rest-server'] === 'running') +
+    statusChip('rest-server (5 MB)', c['lab-rest-server-small'] === 'running') +
+    statusChip(s.model, s.credits?.balance != null, bal);
+}
+
+function fmt(n, d = 2) { return n == null ? '-' : Number(n).toFixed(d); }
+// OK/MISS only makes sense for catalogued scenarios; a manual run has no expected cause.
+function expectedOf(r) { return scenarios.find((s) => s.id === r.scenario)?.expected; }
+function outcomeBadge(r) {
+  const exp = expectedOf(r);
+  if (!r.cause) return `<span class="badge pending">no failure</span>`;
+  if (!exp) return `<span class="badge pending">no expectation</span>`;
+  return exp === r.cause ? `<span class="badge ok">✓ OK</span>` : `<span class="badge miss">✗ MISS</span>`;
+}
+
+function renderKpis() {
+  const withCause = results.filter((r) => r.cause);
+  const graded = withCause.filter((r) => expectedOf(r));
+  const ok = graded.filter((r) => expectedOf(r) === r.cause).length;
+  const recovered = results.filter((r) => r.outcome === 'recovered').length;
+  const alerted = results.filter((r) => r.outcome === 'alerted' || r.outcome === 'retry_failed').length;
+  const ms = withCause.length ? Math.round(withCause.reduce((a, r) => a + (r.jev_ms || 0), 0) / withCause.length) : null;
+  const cost = withCause.reduce((a, r) => a + Number(r.cost_usd || 0), 0);
+  const k = (l, v, s) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="s">${s || ''}</div></div>`;
+  $('#kpis').innerHTML =
+    k('Runs recorded', results.length, 'in results.jsonl') +
+    k('Correct diagnoses', graded.length ? `${ok} / ${graded.length}` : '-', 'catalogued scenarios only') +
+    k('Auto-recovered', recovered, 'unlock or retry succeeded') +
+    k('Alerts raised', alerted, 'handed to a human') +
+    k('Jev latency', ms != null ? `${ms} ms` : '-', 'mean per triage') +
+    k('Billed cost', `$${cost}`, 'per the gateway');
+}
+
+function renderCards() {
+  const last = (id) => [...results].reverse().find((r) => r.scenario === id);
+  $('#cards').innerHTML = scenarios.map((s) => {
+    const r = last(s.id);
+    return `<div class="card">
+      <div class="t"><span>${esc(s.title)}</span>${r ? outcomeBadge(r) : '<span class="badge pending">not run</span>'}</div>
+      <div class="d">${esc(s.breaks)}</div>
+      <div class="m"><span><span class="tag">${esc(s.location)}</span> <span class="tag">expect ${esc(s.expected)}</span></span>
+      <button data-run="${s.id}">Run</button></div>
+    </div>`;
+  }).join('');
+}
+
+function renderResults() {
+  const tb = $('#results tbody');
+  if (!results.length) { tb.innerHTML = `<tr><td colspan="7" class="empty">No results yet.</td></tr>`; return; }
+  tb.innerHTML = [...results].reverse().map((r, i) => {
+    const idx = results.length - 1 - i;
+    const exp = expectedOf(r) || 'none (manual run)';
+    const p = r.cause_probabilities ? r.cause_probabilities[r.cause] : null;
+    return `<tr class="row ${selected === idx ? 'sel' : ''}" data-idx="${idx}">
+      <td>${esc(r.scenario)}<br><span class="muted mono">${esc(r.location)}</span></td>
+      <td class="mono" title="expected: ${esc(exp)}">${r.cause ? esc(r.cause) : '-'}<br>${outcomeBadge(r)}</td>
+      <td class="num">${fmt(p)}</td><td class="num">${fmt(r.urgency)}</td>
+      <td class="mono">${esc(r.action || '-')}</td><td>${esc(r.outcome)}</td><td class="num">${r.jev_ms ?? '-'}</td>
+    </tr>`;
+  }).join('');
+}
+
+function bars(dist, order, sel) {
+  const max = Math.max(...Object.values(dist), 0.0001);
+  return `<div class="bars">${order.map((k) => {
+    const v = dist[k] ?? 0; const isSel = k === sel;
+    return `<div class="lab ${isSel ? 'sel' : ''}" title="${esc(k)}">${esc(k)}</div>
+      <div class="track"><div class="fill ${isSel ? 'sel' : ''}" style="width:${(v / max) * 100}%"></div></div>
+      <div class="val">${fmt(v)}</div>`;
+  }).join('')}</div>`;
+}
+function meter(label, v) {
+  return `<div class="meter"><span class="lab">${label}</span><div class="track"><div class="fill" style="width:${(v || 0) * 100}%"></div></div><span class="val">${fmt(v)}</span></div>`;
+}
+function renderDetail() {
+  const r = results[selected];
+  if (!r) { $('#detail').innerHTML = `<span class="empty">Select a row to see Jev's full answer.</span>`; return; }
+  if (!r.cause) { $('#detail').innerHTML = `<h3>${esc(r.scenario)}</h3><p>The backup succeeded, so there was nothing to triage.</p>`; return; }
+  const urgDist = Object.fromEntries(URG.map((u, i) => [u, r.urgency_probabilities?.[String(i)] ?? 0]));
+  const urgSel = URG[Math.round(r.urgency)] ?? null;
+  $('#detail').innerHTML = `
+    <h3>${esc(r.scenario)} · ${esc(r.location)} · exit ${esc(r.exit_code)} · expected <span class="mono">${esc(expectedOf(r) || 'none (manual run)')}</span></h3>
+    <p class="muted" style="font-size:12px;margin-bottom:8px">Probabilities as returned by Jev, rounded to 2 decimals. Highlighted = chosen.</p>
+    <h3 style="margin-top:10px">cause</h3>${bars(r.cause_probabilities || {}, CAUSES, r.cause)}
+    <h3 style="margin-top:12px">urgency · score ${fmt(r.urgency)} / 3</h3>${bars(urgDist, URG, urgSel)}
+    <h3 style="margin-top:12px">booleans</h3>${meter('transient', r.transient)}${meter('needs_human', r.needs_human)}
+    <div class="kv">
+      <span class="k">action</span><span class="v">${esc(r.action)}</span>
+      <span class="k">outcome</span><span class="v">${esc(r.outcome)}</span>
+      <span class="k">confidence</span><span class="v">${esc(JSON.stringify(r.confidence || {}))}</span>
+      <span class="k">tokens / ms</span><span class="v">${esc(r.tokens ?? '-')} / ${esc(r.jev_ms ?? '-')}</span>
+      <span class="k">log</span><span class="v"><a href="#" data-log="${esc(r.log.split('/').pop())}">${esc(r.log)}</a></span>
+    </div>`;
+}
+
+async function loadAll() {
+  results = await api('/api/results');
+  renderKpis(); renderCards(); renderResults(); renderDetail();
+  const [al, hk] = await Promise.all([api('/api/alerts'), api('/api/hooks')]);
+  $('#alerts').innerHTML = al.length ? al.slice().reverse().map(esc).join('\n') : '<span class="empty">empty</span>';
+  $('#hooks').innerHTML = hk.length ? hk.slice().reverse().map(esc).join('\n') : '<span class="empty">empty</span>';
+  loadStatus();
+}
+
+function setBusy(b, label) {
+  busy = b;
+  document.querySelectorAll('button[data-run], #run-all, #run-backup, #clear').forEach((el) => (el.disabled = b));
+  $('#run-state').innerHTML = `<span class="dot ${b ? 'warning' : ''}"></span>${b ? 'running ' + esc(label) : 'idle'}`;
+}
+function run(target) {
+  if (busy) return;
+  const con = $('#console'); con.innerHTML = '';
+  setBusy(true, target);
+  const es = new EventSource(`/api/run?target=${encodeURIComponent(target)}`);
+  const add = (text, cls) => { const d = document.createElement('div'); d.className = 'line ' + (cls || ''); d.textContent = text; con.appendChild(d); con.scrollTop = con.scrollHeight; };
+  es.addEventListener('start', (e) => add('$ ' + JSON.parse(e.data).cmd, 'head'));
+  es.addEventListener('line', (e) => {
+    const t = JSON.parse(e.data);
+    add(t, /ALERT|FAILED|MISS/.test(t) ? 'alert' : /RECOVERED|^OK:|OK$/.test(t) ? 'ok' : /^===/.test(t) ? 'head' : '');
+    if (/^(=+ SUMMARY|>>> ALERT|RECOVERED|OK: backup)/.test(t)) loadAll();
+  });
+  es.addEventListener('done', (e) => { add(`[exit ${JSON.parse(e.data).code}]`, 'head'); es.close(); setBusy(false); loadAll(); });
+  es.onerror = () => { add('[connection closed]', 'alert'); es.close(); setBusy(false); loadAll(); };
+}
+
+document.addEventListener('click', async (e) => {
+  const b = e.target.closest('button[data-run]'); if (b) return run(b.dataset.run);
+  const row = e.target.closest('tr.row'); if (row) { selected = Number(row.dataset.idx); renderResults(); renderDetail(); return; }
+  const lg = e.target.closest('a[data-log]'); if (lg) {
+    e.preventDefault();
+    const name = lg.dataset.log;
+    const txt = await (await fetch('/api/log?name=' + encodeURIComponent(name))).text();
+    $('#dlg-title').textContent = 'logs/' + name; $('#dlg-body').textContent = txt; $('#dlg').showModal();
+  }
+});
+$('#run-all').onclick = () => run('all');
+$('#run-backup').onclick = () => run('backup:' + $('#loc').value);
+$('#clear').onclick = async () => { if (confirm('Clear results.jsonl and alerts.log?')) { await api('/api/clear', { method: 'POST' }); selected = null; loadAll(); } };
+$('#dlg-close').onclick = () => $('#dlg').close();
+
+(async () => {
+  const s = await api('/api/scenarios');
+  scenarios = s.scenarios;
+  $('#loc').innerHTML = s.locations.map((l) => `<option>${esc(l)}</option>`).join('');
+  await loadAll();
+  setInterval(loadStatus, 15000);
+})();
+</script>
+</body>
+</html>

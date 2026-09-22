@@ -1,0 +1,24 @@
+# Remote backends for the lab. Nothing here touches the host outside this directory.
+# The containers run as the host user (LAB_UID/LAB_GID, written to .env by setup.sh) so the
+# repository files under repos/ stay owned by you and can be deleted without root.
+services:
+  rest-server:
+    image: restic/rest-server:latest
+    container_name: lab-rest-server
+    user: "${LAB_UID:-1000}:${LAB_GID:-1000}"
+    command: rest-server --no-auth --path /data --listen :8000
+    ports:
+      - "127.0.0.1:8500:8000"
+    volumes:
+      - ./repos/rest:/data
+
+  # Backend with a tiny quota to provoke "disk full"
+  rest-server-small:
+    image: restic/rest-server:latest
+    container_name: lab-rest-server-small
+    user: "${LAB_UID:-1000}:${LAB_GID:-1000}"
+    command: rest-server --no-auth --path /data --listen :8000 --max-size 5000000
+    ports:
+      - "127.0.0.1:8501:8000"
+    volumes:
+      - ./repos/quota:/data
