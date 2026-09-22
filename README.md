@@ -17,7 +17,7 @@ Requirements: Docker with the compose plugin, Node.js 22+, `jq`, `curl`, `bzip2`
 system-wide: restic and autorestic are downloaded into `bin/`, the backends run in Docker.
 
 ```bash
-git clone <this repo> autorestic-lab && cd autorestic-lab
+git clone https://github.com/dgarci4/autorestic-jev-lab.git && cd autorestic-jev-lab
 cp .env.example .env            # then put your AI_GATEWAY_API_KEY in it
 ./setup.sh                      # binaries, npm deps, repo keys, sample data, Docker backends, repo init
 ./run-all.sh                    # the 7 failure scenarios, ~3 minutes
